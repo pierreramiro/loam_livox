@@ -319,6 +319,15 @@ class Livox_laser
         return res_img;
     }
 
+    /**
+     * @brief Esta función nos permite obtener
+     * 
+     * \param pt_infos Variable que contiene la información del punto
+     * 
+     * \param pt_type variable que indica el tipo de borde
+     * 
+     * \param neighbor_count contador de vecindarios 
+     */
     void add_mask_of_point( Pt_infos *pt_infos, const E_point_type &pt_type, int neighbor_count = 0 )
     {
 
@@ -454,6 +463,7 @@ class Livox_laser
         }
     }
 
+    //Creo que convierten la flor de 3d a 2d, para una mejor facilidad de los puntos
     template < typename T >
     int projection_scan_3d_2d( pcl::PointCloud< T > &laserCloudIn, std::vector< float > &scan_id_index )
     {
@@ -469,31 +479,37 @@ class Livox_laser
         m_map_pt_idx.reserve( pts_size );
         std::vector< int > zero_idx;
 
-        m_input_points_size = 0;
-
-        for ( unsigned int idx = 0; idx < pts_size; idx++ )
-        {
+        m_input_points_size = 0;//reseteamos la cantidad de puntos
+        //hacemos un bucle para manipular cada punto
+        for ( unsigned int idx = 0; idx < pts_size; idx++ ){
+            //guardamos los puntos en un vector "m_raw_pts_vec" de class PointType
             m_raw_pts_vec[ idx ] = laserCloudIn.points[ idx ];
             Pt_infos *pt_info = &m_pts_info_vec[ idx ];
             m_map_pt_idx.insert( std::make_pair( laserCloudIn.points[ idx ], pt_info ) );
+            //guardamos la intensidad
             pt_info->raw_intensity = laserCloudIn.points[ idx ].intensity;
+            //el idx
             pt_info->idx = idx;
+            //el time_stamp
             pt_info->time_stamp = m_current_time + ( ( float ) idx ) * m_time_internal_pts;
+            //Definimos el nuevo maxTimeStamp
             m_last_maximum_time_stamp = pt_info->time_stamp;
+            //sumamos al contador
             m_input_points_size++;
 
             if ( !std::isfinite( laserCloudIn.points[ idx ].x ) ||
                  !std::isfinite( laserCloudIn.points[ idx ].y ) ||
                  !std::isfinite( laserCloudIn.points[ idx ].z ) )
             {
+                //El punto no es un numero, es un NaN por lo que debemo eliminarlo y continuar con los otros puntos
                 add_mask_of_point( pt_info, e_pt_nan );
                 continue;
             }
 
-            if ( laserCloudIn.points[ idx ].x == 0 )
-            {
-                if ( idx == 0 )
-                {
+            if ( laserCloudIn.points[ idx ].x == 0 ){
+            //Sea el caso que el valor de X es igual a cero
+                if ( idx == 0 ){
+                //Esto debe verificarse solo para el primer punto
                     // TODO: handle this case.
                     screen_out << "First point should be normal!!!" << std::endl;
 
@@ -507,19 +523,20 @@ class Livox_laser
                     pt_info->pt_2d_img = m_pts_info_vec[ idx - 1 ].pt_2d_img;
                     pt_info->polar_dis_sq2 = m_pts_info_vec[ idx - 1 ].polar_dis_sq2;
                     add_mask_of_point( pt_info, e_pt_000 );
+                    //evaluamos el siguiente punto
                     continue;
                 }
             }
-
             m_map_pt_idx.insert( std::make_pair( laserCloudIn.points[ idx ], pt_info ) );
-
+            //se calcula la norma al cuadrado
             pt_info->depth_sq2 = depth2_xyz( laserCloudIn.points[ idx ].x, laserCloudIn.points[ idx ].y, laserCloudIn.points[ idx ].z );
-
+            //se "proyecta el punto"
             pt_info->pt_2d_img << laserCloudIn.points[ idx ].y / laserCloudIn.points[ idx ].x, laserCloudIn.points[ idx ].z / laserCloudIn.points[ idx ].x;
+            //Se halla la magnitud del vector al cuadrado
             pt_info->polar_dis_sq2 = dis2_xy( pt_info->pt_2d_img( 0 ), pt_info->pt_2d_img( 1 ) );
-
+            //evaluamos si el punto debe ser filtrado o no
             eval_point( pt_info );
-
+            //evaluamos si la distancia supera el borde del circulo
             if ( pt_info->polar_dis_sq2 > m_max_edge_polar_pos )
             {
                 add_mask_of_point( pt_info, e_pt_circle_edge, 2 );

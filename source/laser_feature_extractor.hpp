@@ -86,7 +86,7 @@ class Laser_feature
     File_logger m_file_logger;
 
     bool        m_if_pub_each_line = false;
-    int         m_lidar_type = 0; // 0 is velodyne, 1 is livox
+    int         m_lidar_type = 1; // 0 is velodyne, 1 is livox
     int         m_laser_scan_number = 64;
     std::mutex  m_mutex_lock_handler;
     Livox_laser m_livox;
@@ -128,9 +128,7 @@ class Laser_feature
     }
 
 
-    int                       init_ros_env()
-    {
-
+    int init_ros_env(){
         ros::NodeHandle nh;
         m_init_timestamp = ros::Time::now();
         init_livox_lidar_para(nh);
@@ -238,11 +236,16 @@ class Laser_feature
         cloud_out.width = static_cast<uint32_t>( j );
         cloud_out.is_dense = true;
     }
-
+    /***************************************************************************************************************/
+    //Esta función es similar al LOAM_NOTED, veamos que puedo sacar de esta función para añadirla a la que ya tengo
+    //desarrollada en CUDA
+    /***************************************************************************************************************/
     void laserCloudHandler( const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg, const std::string & topic_name )
     {
+        //Se pone un mutex para evitar race conditions(?)
         std::unique_lock<std::mutex> lock(m_mutex_lock_handler);
         int current_lidar_index = 0;
+        //Se busca el indice con el cual inicia la nube(?)
         for(int i = 0; i< m_maximum_input_lidar_pointcloud; i++)
         {
             if(topic_name.compare(m_input_lidar_topic_name_vec[i]) == 0)
@@ -251,11 +254,13 @@ class Laser_feature
                 break;
             }
         }
+        //Se analiza que el índice este dentro del rango de la nube de puntos
         assert(current_lidar_index < m_maximum_input_lidar_pointcloud);
-        // std::cout <<"Time: " << laserCloudMsg->header.stamp.toSec() << ", name = " << topic_name << ", idx= " << current_lidar_index << std::endl;
-
+            // std::cout <<"Time: " << laserCloudMsg->header.stamp.toSec() << ", name = " << topic_name << ", idx= " << current_lidar_index << std::endl;
+        //Creamos un vector que contiene la cantidad de m_laser_scan_number, para los nSCANs que contiene el sensor.
         std::vector<pcl::PointCloud<PointType>> laserCloudScans( m_laser_scan_number );
 
+        //Al igual que en NOTED se espera a que el sistema esté inicializado
         if ( !m_para_systemInited )
         {
             m_para_system_init_count++;
@@ -268,9 +273,10 @@ class Laser_feature
                 return;
         }
 
+        //Es raro, crean un vector para 1000 elementos... NO deberin ser 16 o 64 para el velodyne?.. O sera que hacen esto por el LIVOX
         std::vector<int> scanStartInd( 1000, 0 );
         std::vector<int> scanEndInd( 1000, 0 );
-
+        //Convertirmos la nube de ROS a PCL
         pcl::PointCloud<pcl::PointXYZI> laserCloudIn;
         pcl::fromROSMsg( *laserCloudMsg, laserCloudIn );
         int raw_pts_num = laserCloudIn.size();
@@ -278,17 +284,17 @@ class Laser_feature
         m_file_logger.printf( " Time: %.5f, num_raw: %d, num_filted: %d\r\n", laserCloudMsg->header.stamp.toSec(), raw_pts_num, laserCloudIn.size() );
 
         size_t cloudSize = laserCloudIn.points.size();
-
-        if ( m_lidar_type ) // Livox scans
-        {
-
+        //decidimos que tipo de LIDAR es el que tomó el scan
+        if ( m_lidar_type ){ // Livox scans
+            //usamos la función para obtener los FEATURES
             laserCloudScans = m_livox.extract_laser_features( laserCloudIn, laserCloudMsg->header.stamp.toSec() );
 
             if ( laserCloudScans.size() <= 5 ) // less than 5 scan
             {
                 return;
             }
-
+            
+            //Lo casteamos a float
             m_laser_scan_number = laserCloudScans.size() * 1.0;
 
             scanStartInd.resize( m_laser_scan_number );
